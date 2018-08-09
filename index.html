@@ -12,83 +12,87 @@
   <script src="js/jquery.js"></script>
   <!-- Cookie -->
   <script src="js/cookie.js"></script>
+  <script src="js/post_list.js"></script>
+  <script src="js/fb_login.js"></script>
   <title>Document</title>
 </head>
 <body>
   <div class="container">
     <h1>Instagram</h1>
+    <button id="btn-facebook" class="btn btn-primary btn-sm">Facebook login</button>
+    <div id="info"></div>
 
     <div class="content">
-      <!-- <div class="card mb-3">
-        <div class="card-header"></div>
-        <div class="card-body p-0"></div>
-      </div> -->
     </div>
   </div>
-
   <script>
-    // Token값을 가져오는 함수
-    function getToken(username, password) {
-      axios.post('http://localhost:8000/api/users/auth-token/', {
-        username: username,
-        password: password,
-      })
-      .then(function (response) {
-        var token = response.data.token;
-        setCookie('token', token, 10);
-      })
-      .catch(function (error) {
-        console.log(error);
-      })
-    }
+    // 유저가 #btn-facebook를 클릭했을때
+    // 1. 브라우저에 페이스북 로그인이 안도어있을 경우
+    //   -> 페이스북 로그인 페이지로 이동시키며, 로그인 완료후 여기로 돌아와야 함
+    // 2. 페이스북 로그인은 되어있는데, 앱 승인은 하지 않은 경우
+    //   -> 페이스북 앱 승인하는 페이지로 이동하고, 완료후 여기로 다시 돌아와야 함
+    // 3. 페이스북 로그인도 되어있고, 앱 승인도 된 경우
+    //   -> 유저 정보를 확인해본다
+    // 자바스크립트의 경우 fb.login()으로 모두 해결이 된다.
 
-    function authTest() {
-      axios({
-        method: 'get',
-        url: 'http://localhost:8000/api/users/auth-test/',
-        headers: {
-          'Authorization': 'Token ' + getCookie('token')
+    $('#btn-facebook').click(facebookLigin);
+    // 페이스북 로그인을 실행할 경우
+    function facebookLigin() {
+      // FB.login()을 실행하며, 콜백함수의 response를 로그
+      FB.login(function (response) {
+        // console.log(response);
+        // 사용자가 페이스북 로그인과 앱 승인과정을 모두 통과했을 경우
+        if (response.status === 'connected') {
+          // 액세스 토큰을 받아옴
+          // var accessToken = response.authResponse.accessToken;
+          // SDK를 사용해서 로그인한 유저 자신의 정보를 가져오는 API
+          FB.api('/me', {fields: 'last_name, first_name, id'}, function(response) {
+            console.log(response);
+            axios.post('http://localhost:8000/api/users/facebook-auth-login/', {
+              facebook_id: response.id,
+              last_name: response.last_name,
+              first_name: response.first_name,
+            })
+            // response에 포함된 FacebookID에 해당하는 User가 이미 서버에 있으면 서버는 토큰을 돌려준다
+            // 서버에 없으면 서버에 유저를 생성하고, 해당 유저의 토큰을 돌려준다.
+            .then(function (response) {
+              // Django에서 적절한 응답이 돌아오면 (Token이 돌아오게 됨)
+              // 해당 값을 브라우저의 쿠키에 저장
+              setCookie('token', response.data.token, 12);
+              $('#info').text(`${response.data.user.last_name}${response.data.user.first_name}(으)로 로그인 중`);
+              $('#btn-facebook').hide();
+            })
+            .catch(function (error) {
+              console.log(error);
+            });
+          });
         }
-      })
-      .then(function (response) {
-        console.log(response);
-      })
-      .catch(function (error) {
-        console.log(error);
-      });
-    }
-  // /api/posts/에 GET요청
-    axios.get('http://localhost:8000/api/posts/')
-      // 성공시
-      .then(function (response) {
-        // response,data가 가진 요소들을 순회
-        // console.log(response.data);
-        for (var i = 0; i < response.data.length; i++) {
-          // 각 순회에 해당하는 요소는 curPost
-          var curPost = response.data[i];
-          console.log(curPost);
+        // 둘 중 하나라도 진행이 안되었을 경우
+        else {
 
-          // curPost의 내용을 '.content'요소에 append(뒤에 붙여놓음)
-          // var curElement = '<p>' + curPost.pk + '</p>';
-          var curElement = '<div class="card mb-3">';
-          curElement    +=   '<div class="card-header">' + curPost.author + '(pk:' + curPost.pk +')'+ '</div>';
-          curElement    +=   '<div class="card-body p-0">';
-          curElement    +=     '<img src="' + curPost.photo + '" width="100%">'
-          curElement    +=   '</div>';
-          curElement    += '</div>';
-          $(".content").append(curElement);
-
-          var curElement = `<div class="card mb-3">
-                              <div class="card-header"></div>
-                              <div class="card-body p-0">
-                                <img src="${curPost.photo}" width="100%">
-                              </div>
-                            </div>`
         }
-      })
-      .catch(function (error) {
-        console.log(error);
-      });
+      }, {scope: 'public_profile'});,
+    }
+    function getUserInfo() {
+      var token = getCookie('token');
+      if (token) {
+        axios({
+          method: 'get',
+          url: 'http://localhost:8000/api/users/profile',
+          headers: {
+            'Authorization': 'Token ' + getCookie('token')
+          }
+        })
+        .then(function (response) {
+          // Django에서 적절한 응답이 돌아오면 (Token이 돌아오게 됨)
+          // 해당 값을 브라우저의 쿠키에 저장
+          setCookie('token', response.data.token, 12);
+          $('#info').text(`${response.data.user.last_name}${response.data.user.first_name}(으)로 로그인 중`);
+          $('#btn-facebook').hide();
+        })
+
+      }
+    }
   </script>
 
 </body>
